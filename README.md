@@ -13,7 +13,7 @@ databricks.yml      # DABs bundle: app resource + warehouse binding + user_api_s
 app/
   app.py            # FastMCP server (one tool)
   app.yaml          # app runtime config (start command + env)
-  requirements.txt  # fastmcp, databricks-sql-connector
+  requirements.txt  # fastmcp, databricks-sdk
 test_client.py      # smoke test against the deployed endpoint
 ```
 
@@ -67,6 +67,15 @@ The client authenticates to the app with a Databricks OAuth token; the Apps prox
   }
 }
 ```
+
+## Query engine
+
+Queries run through the `databricks-sdk` `WorkspaceClient.statement_execution` API (the Statement Execution REST API), not the `databricks-sql-connector` driver. The user-scoped client is built with `auth_type="pat"` so the forwarded OBO token is used and the app SP's injected `DATABRICKS_CLIENT_ID`/`SECRET` are ignored (otherwise the SDK errors with "more than one authorization method configured").
+
+Trade-offs vs. the SQL connector:
+- Lighter dependency, server-side `row_limit`, and results serialize straight to JSON.
+- Values come back as **strings** (`JSON_ARRAY` format), not native types.
+- Best for lightweight, bounded result sets. For large analytical result sets, the `databricks-sql-connector` (Arrow / cloud fetch / streaming) is the better tool.
 
 ## Notes
 
