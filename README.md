@@ -53,20 +53,56 @@ python test_client.py
 
 Expect `TOOLS: ['execute_sql']` and a result whose `me` column is your own username, confirming OBO.
 
-## Connect an MCP client
+## Connect a client
 
-The client authenticates to the app with a Databricks OAuth token; the Apps proxy forwards it as `x-forwarded-access-token`.
+An Apps-hosted MCP server sits behind the Databricks OAuth proxy, which means:
 
-```jsonc
-{
-  "mcpServers": {
-    "dbx-sql": {
-      "url": "https://<app-url>/mcp",
-      "headers": { "Authorization": "Bearer <databricks-oauth-token>" }
-    }
-  }
-}
+- **OAuth tokens only.** PATs (`dapi…`) are rejected with 401. (PATs work only for *managed* MCP servers / MCP Services, never Apps-hosted.)
+- **No Dynamic Client Registration.** Databricks disables DCR, so a client cannot self-register; it needs a pre-known client id, or it must reuse an existing OAuth session.
+
+That leaves two supported paths.
+
+### Path A — native OAuth (portable; needs account admin, one-time)
+
+Register a **public** OAuth App Connection so the client has a `client_id` (this is the only reason the app is needed: DCR being off, nothing can mint the id automatically):
+
+- Account Console → **Settings → App Connections → Add connection**
+- Redirect URL: `http://localhost:8080/callback`; Client type: **Public** (no secret)
+
+Then point Claude Code at it:
+
+```bash
+claude mcp add --transport http --scope user \
+  --client-id <CLIENT_ID> --callback-port 8080 \
+  dbx-sql https://<app-url>/mcp
+# then run /mcp inside Claude Code -> Authenticate
 ```
+
+This is portable to Cursor, ChatGPT connectors, and teammates (each does their own login).
+
+### Path B — reuse your Databricks CLI OAuth session (no admin; the fallback)
+
+If you can't register an OAuth app, reuse the CLI's already-authenticated, auto-refreshing session via a `headersHelper` script. **Fresh-machine setup, assuming the server already exists:**
+
+```bash
+# 1. authenticate the CLI to the workspace (OAuth U2M)
+databricks auth login --host https://<workspace-hostname> --profile <PROFILE>
+
+# 2. install the helper and point it at that profile
+mkdir -p ~/.claude
+cp clients/claude-code/headers-helper.sh ~/.claude/dbx-sql-mcp-headers.sh
+chmod +x ~/.claude/dbx-sql-mcp-headers.sh
+# edit the PROFILE line in the script (or export DBX_PROFILE=<PROFILE> before launching Claude Code)
+
+# 3. register the server with the helper (add-json, since `add` has no headersHelper flag)
+claude mcp add-json --scope user dbx-sql \
+  '{"type":"http","url":"https://<app-url>/mcp","headersHelper":"'"$HOME"'/.claude/dbx-sql-mcp-headers.sh"}'
+
+# 4. verify
+claude mcp get dbx-sql        # expect: Status: Connected
+```
+
+The helper runs on every request, so tokens never go stale as long as the CLI login is valid (`databricks auth login --profile <PROFILE>` to refresh). This route is Claude-Code- and machine-specific and rides the CLI's broad token, so prefer Path A when you can register an app.
 
 ## Query engine
 
