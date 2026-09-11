@@ -1,0 +1,35 @@
+bundle:
+  name: fastmcp-example
+
+variables:
+  app_name:
+    description: Databricks App name (<=26 chars, lowercase/hyphens). An mcp- prefix makes it discoverable in the AI Gateway MCP list.
+    default: mcp-sql-obo
+  warehouse_id:
+    description: SQL warehouse the app queries. OBO uses the CALLER's grants, not the app SP. Find with `databricks warehouses list`.
+
+resources:
+  apps:
+    fastmcp_app:
+      name: ${var.app_name}
+      description: Lightweight FastMCP server querying a SQL warehouse on behalf of the calling user (OBO)
+      source_code_path: ./app
+      user_api_scopes:
+        - sql
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+      config:
+        command:
+          - python
+          - app.py
+        env:
+          - name: DATABRICKS_WAREHOUSE_ID
+            value_from: sql-warehouse
+
+targets:
+  dev:
+    default: true
+    mode: development

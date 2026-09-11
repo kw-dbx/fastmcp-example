@@ -1,0 +1,2 @@
+fastmcp>=2.3.0
+databricks-sql-connector>=3.4.0
